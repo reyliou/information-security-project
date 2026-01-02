@@ -16,6 +16,14 @@ const User = sequelize.define('User', {
     type: DataTypes.STRING,
     allowNull: false,
   },
+  otpSecret: {
+    type: DataTypes.STRING,
+    allowNull: true, // 可選，啟用 2FA 時設置
+  },
+  is2FAEnabled: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+  },
 });
 
 module.exports = { sequelize, User };
