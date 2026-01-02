@@ -35,7 +35,7 @@
 ### 前端安全設計 (3 項)
 1. **Content Security Policy (CSP)**: 在 index.html 中設定 CSP，防止 XSS。
 2. **輸入消毒**: 在 React 中使用受控組件，防止惡意輸入。
-3. **HTTPS 強制**: (待實作) 使用 HTTPS 加密傳輸。
+3. **HTTPS 強制**: 使用 HTTPS 加密傳輸。
 
 ### 其他優化設計 (2 項)
 1. **環境變數管理**: 使用 dotenv 管理敏感資訊，避免硬編碼。
