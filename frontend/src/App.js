@@ -14,7 +14,7 @@ function App() {
 
   const handleRegister = async () => {
     try {
-      const response = await axios.post('http://localhost:3001/register', { username, password });
+      const response = await axios.post('https://localhost:3443/register', { username, password });
       setMessage('註冊成功！請登入。');
     } catch (error) {
       setMessage(error.response?.data?.error || '註冊失敗');
@@ -23,7 +23,7 @@ function App() {
 
   const handleEnable2FA = async () => {
     try {
-      const response = await axios.post('http://localhost:3001/enable-2fa', { username });
+      const response = await axios.post('https://localhost:3443/enable-2fa', { username });
       setQrCode(response.data.qrCode);
       setMessage('2FA 已啟用！請掃描 QR 碼並保存密鑰。');
     } catch (error) {
@@ -33,7 +33,7 @@ function App() {
 
   const handleLogin = async () => {
     try {
-      const response = await axios.post('http://localhost:3001/login', {
+      const response = await axios.post('https://localhost:3443/login', {
         username,
         password,
         otpToken: requires2FA ? otpToken : undefined
@@ -56,7 +56,7 @@ function App() {
 
   const handleProtected = async () => {
     try {
-      const response = await axios.get('http://localhost:3001/protected', {
+      const response = await axios.get('https://localhost:3443/protected', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMessage(response.data.message);

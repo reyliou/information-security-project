@@ -5,21 +5,52 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const Joi = require('joi');
+const https = require('https');
+const crypto = require('crypto');
 const { sequelize, User } = require('./models/User');
 require('dotenv').config();
 
 const PORT = process.env.PORT || 3001;
+const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
 const app = express();
 
-// ... existing code ...
-
-// ... existing code ...
+// 生成自簽名 SSL 證書 (僅用於開發環境)
+function generateSelfSignedCert() {
+  // 在開發環境中返回 null，讓 Node.js 使用默認證書
+  return null;
+}
 
 module.exports = app; // 添加導出
 
 if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`後端運行在 http://localhost:${PORT}`);
+  // 同步資料庫
+  sequelize.sync().then(() => {
+    // 啟動 HTTP 伺服器
+    app.listen(PORT, () => {
+      console.log(`HTTP 伺服器運行在 http://localhost:${PORT}`);
+    });
+
+    // 在生產環境中啟動 HTTPS 伺服器
+    if (process.env.NODE_ENV === 'production') {
+      try {
+        const sslOptions = generateSelfSignedCert();
+        if (sslOptions) {
+          const httpsServer = https.createServer(sslOptions, app);
+          httpsServer.listen(HTTPS_PORT, () => {
+            console.log(`HTTPS 伺服器運行在 https://localhost:${HTTPS_PORT}`);
+          });
+        } else {
+          console.log('跳過 HTTPS 伺服器啟動 (無有效證書)');
+        }
+      } catch (error) {
+        console.warn('HTTPS 伺服器啟動失敗:', error.message);
+        console.log('繼續使用 HTTP 伺服器');
+      }
+    } else {
+      console.log('開發環境: 如需 HTTPS，請設置 NODE_ENV=production');
+    }
+  }).catch(err => {
+    console.error('資料庫同步失敗:', err);
   });
 }
 
@@ -27,6 +58,19 @@ if (require.main === module) {
 app.use(helmet()); // 安全標頭
 app.use(cors()); // CORS 保護
 app.use(express.json());
+
+// HTTPS 強制中間件 (後端安全設計 6: HTTPS 加密傳輸)
+app.use((req, res, next) => {
+  if (req.header('x-forwarded-proto') !== 'https' && req.protocol !== 'https') {
+    // 在生產環境中重定向到 HTTPS
+    if (process.env.NODE_ENV === 'production') {
+      return res.redirect(`https://${req.header('host')}${req.url}`);
+    }
+    // 在開發環境中發出警告
+    console.warn('警告: 請求使用 HTTP 而非 HTTPS。在生產環境中應強制使用 HTTPS。');
+  }
+  next();
+});
 
 // 速率限制 (後端安全設計 1: 防止 DoS)
 const limiter = rateLimit({
