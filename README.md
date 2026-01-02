@@ -46,6 +46,27 @@
 - npm v8+
 - 瀏覽器: Chrome/Firefox
 
+## 測試腳本
+
+### 本地測試
+運行 `test-local.bat` 來啟動本地開發環境：
+```bash
+test-local.bat
+```
+
+### Docker 測試
+運行 `test-docker.ps1` 來測試 Docker 部署：
+```powershell
+.\test-docker.ps1
+```
+
+清理 Docker 容器：
+```powershell
+.\test-docker.ps1 -Clean
+```
+
+**注意**: Docker 測試腳本使用 PowerShell 來解決中文顯示亂碼問題。
+
 ## 資料庫建置方式與資料表設計
 
 ### 資料庫

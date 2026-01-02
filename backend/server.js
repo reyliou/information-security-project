@@ -87,6 +87,4 @@ app.get('/protected', authenticateToken, (req, res) => {
   res.json({ message: `歡迎, ${req.user.username}` });
 });
 
-app.listen(PORT, () => {
-  console.log(`後端運行在 http://localhost:${PORT}`);
-});
+// 服務器啟動邏輯已經在上面處理了
