@@ -87,4 +87,31 @@ app.get('/protected', authenticateToken, (req, res) => {
   res.json({ message: `歡迎, ${req.user.username}` });
 });
 
+// 隱藏的 CTF Flag 路由 - 需要特殊 header
+app.get('/secret-flag', (req, res) => {
+  const specialHeader = req.headers['x-ctf-token'];
+
+  if (specialHeader === 'infosec2026') {
+    const fs = require('fs');
+    const path = require('path');
+
+    try {
+      const flagPath = path.join(__dirname, 'flag.txt');
+      const flag = fs.readFileSync(flagPath, 'utf8');
+      res.json({
+        message: '恭喜你找到了隱藏的 Flag！',
+        flag: flag.trim(),
+        hint: '你成功發現了這個隱藏的端點！'
+      });
+    } catch (error) {
+      res.status(500).json({ error: 'Flag 文件讀取失敗' });
+    }
+  } else {
+    res.status(403).json({
+      error: '存取被拒絕',
+      hint: '你需要正確的 CTF token 才能獲取 flag'
+    });
+  }
+});
+
 // 服務器啟動邏輯已經在上面處理了

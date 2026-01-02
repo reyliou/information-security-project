@@ -41,6 +41,13 @@
 1. **環境變數管理**: 使用 dotenv 管理敏感資訊，避免硬編碼。
 2. **CI/CD 集成**: 使用 GitHub Actions 進行自動安全掃描。
 
+### CTF 挑戰 (額外加分)
+專案包含一個隱藏的 CTF Flag 功能：
+- **位置**: `backend/flag.txt`
+- **存取方式**: `GET /secret-flag`
+- **認證**: 需要 `x-ctf-token: infosec2026` header
+- **用途**: 展示隱藏資源發現和安全測試概念
+
 ## 測試環境
 - Node.js v16+
 - npm v8+
