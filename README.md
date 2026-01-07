@@ -56,20 +56,20 @@
 ## 測試腳本
 
 ### 本地測試
-運行 `test-local.bat` 來啟動本地開發環境：
+運行 `scripts/test-local.bat` 來測試本地開發環境：
 ```bash
-test-local.bat
+.\scripts\test-local.bat
 ```
 
 ### Docker 測試
-運行 `test-docker.ps1` 來測試 Docker 部署：
+運行 `scripts/test-docker.ps1` 來測試 Docker 部署：
 ```powershell
-.\test-docker.ps1
+.\scripts\test-docker.ps1
 ```
 
 清理 Docker 容器：
 ```powershell
-.\test-docker.ps1 -Clean
+.\scripts\test-docker.ps1 -Clean
 ```
 
 **注意**: Docker 測試腳本使用 PowerShell 來解決中文顯示亂碼問題。

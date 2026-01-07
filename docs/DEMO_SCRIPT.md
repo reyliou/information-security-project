@@ -96,7 +96,7 @@ curl -X POST http://localhost:3001/register -H "Content-Type: application/json" 
 ### 2. 啟動 Docker 環境
 ```bash
 # 運行 Docker 測試腳本
-test-docker.bat
+.\scripts\test-docker.bat
 ```
 
 **展示內容：**
@@ -148,7 +148,7 @@ curl -H "x-ctf-token: infosec2026" http://localhost:3002/secret-flag
 ### 1. 清理 Docker 環境
 ```bash
 # 停止並刪除容器
-test-docker.bat -Clean
+.\scripts\test-docker.bat -Clean
 
 # 或者手動清理
 docker-compose -p infosec down -v
@@ -200,16 +200,16 @@ docker-compose -p infosec down -v
 
 ```bash
 # 1. 本地測試
-test-local.bat
+.\scripts\test-local.bat
 
 # 2. Docker 測試
-test-docker.bat
+.\scripts\test-docker.bat
 
 # 3. CTF Flag 測試
 curl -H "x-ctf-token: infosec2026" http://localhost:3002/secret-flag
 
 # 4. 清理
-test-docker.bat -Clean
+.\scripts\test-docker.bat -Clean
 ```
 
 ---

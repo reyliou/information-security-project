@@ -21,17 +21,17 @@
 
 ### 快速測試
 ```bash
-# 雙擊 run-tests.bat 並選擇測試類型
-run-tests.bat
+# 雙擊 scripts/run-tests.bat 並選擇測試類型
+.\scripts\run-tests.bat
 ```
 
 ### 直接運行
 ```bash
 # 本地測試
-test-local.bat
+.\scripts\test-local.bat
 
 # Docker 測試
-test-docker.bat
+.\scripts\test-docker.bat
 ```
 
 ## 腳本功能

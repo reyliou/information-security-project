@@ -16,8 +16,17 @@
 │   ├── Dockerfile     # 前端容器配置
 │   ├── nginx.conf     # Nginx 配置
 │   └── src/
+├── docs/              # 專案文檔
+│   ├── DOCKER_DEPLOYMENT_GUIDE.md
+│   ├── DEMO_SCRIPT.md
+│   └── prompt.md
+├── scripts/           # 測試和演示腳本
+│   ├── test-docker-https.bat
+│   ├── test-docker.bat
+│   ├── demo-script.bat
+│   └── demo-https.bat
 ├── docker-compose.yml # 多服務編排配置
-└── test-docker-https.bat # 測試腳本
+└── README.md
 ```
 
 ## 🔧 環境準備
@@ -74,7 +83,7 @@ docker info
    ```
 3. **運行測試腳本**
    ```bash
-   .\test-docker-https.bat
+   .\scripts\test-docker-https.bat
    ```
 
 腳本會自動執行以下步驟：
@@ -333,7 +342,7 @@ docker volume prune -f
 
 ```bash
 # 使用測試腳本清理
-.\test-docker-https.bat -Clean
+.\scripts\test-docker-https.bat -Clean
 ```
 
 ## 🚨 故障排除
