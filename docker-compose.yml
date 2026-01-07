@@ -1,0 +1,28 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "3002:3001"  # HTTP
+      - "3443:3443"  # HTTPS
+    environment:
+      - NODE_ENV=production
+      - JWT_SECRET=your_docker_secret_key
+      - PORT=3001
+      - HTTPS_PORT=3443
+    volumes:
+      - ./backend/database.sqlite:/app/database.sqlite
+    networks:
+      - app-network
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
