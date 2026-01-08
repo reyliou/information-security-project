@@ -7,6 +7,8 @@ const bcrypt = require('bcryptjs');
 const Joi = require('joi');
 const https = require('https');
 const crypto = require('crypto');
+const speakeasy = require('speakeasy');
+const qrcode = require('qrcode');
 const { sequelize, User } = require('./models/User');
 const logger = require('./logger');
 const swaggerJsdoc = require('swagger-jsdoc');
@@ -71,8 +73,10 @@ app.use(helmet()); // 安全標頭
 app.use(cors()); // CORS 保護
 app.use(express.json());
 
+// 設置信任代理 (允許 nginx 代理標頭)
+app.set('trust proxy', true);
+
 // 請求日誌記錄中間件 (優化設計 3: 結構化日誌系統)
-/*
 app.use((req, res, next) => {
   const start = Date.now();
   const clientIP = req.ip || req.connection.remoteAddress || req.socket.remoteAddress || 'unknown';
@@ -105,11 +109,17 @@ app.use((req, res, next) => {
 
   next();
 });
-*/
 
 // HTTPS 強制中間件 (後端安全設計 6: HTTPS 加密傳輸)
 app.use((req, res, next) => {
-  if (req.header('x-forwarded-proto') !== 'https' && req.protocol !== 'https') {
+  // 允許來自 nginx 代理的 HTTP 請求 (Docker 容器間通信)
+  const forwardedHost = req.header('x-forwarded-host');
+  const isFromProxy = forwardedHost && (forwardedHost.includes('localhost') || forwardedHost.includes('frontend'));
+
+  // 在 Docker 環境中允許 HTTP 通信 (沒有 x-forwarded-proto 標頭表示直接容器間通信)
+  const isDockerInternal = !req.header('x-forwarded-proto');
+
+  if (!isFromProxy && !isDockerInternal && req.header('x-forwarded-proto') !== 'https' && req.protocol !== 'https') {
     // 在生產環境中重定向到 HTTPS
     if (process.env.NODE_ENV === 'production') {
       return res.redirect(`https://${req.header('host')}${req.url}`);
@@ -226,7 +236,8 @@ const users = [];
 // 輸入驗證模式 (後端安全設計 2: 輸入驗證)
 const userSchema = Joi.object({
   username: Joi.string().min(3).max(30).required(),
-  password: Joi.string().min(6).required()
+  password: Joi.string().min(6).required(),
+  otpToken: Joi.string().length(6).pattern(/^\d+$/).optional() // 可選的6位數字
 });
 
 /**
@@ -266,14 +277,33 @@ const userSchema = Joi.object({
  *       400:
  *         description: 輸入驗證失敗
  */
-app.post('/register', async (req, res) => {
+app.post('/api/register', async (req, res) => {
   const { error } = userSchema.validate(req.body);
   if (error) return res.status(400).json({ error: error.details[0].message });
 
   const { username, password } = req.body;
-  const hashedPassword = await bcrypt.hash(password, 10);
-  users.push({ username, password: hashedPassword });
-  res.status(201).json({ message: '用戶註冊成功' });
+
+  try {
+    // 檢查用戶是否已存在
+    const existingUser = await User.findOne({ where: { username } });
+    if (existingUser) {
+      return res.status(400).json({ error: '用戶名已存在' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // 創建新用戶
+    await User.create({
+      username,
+      password: hashedPassword,
+      role: 'user' // 預設角色為一般使用者
+    });
+
+    res.status(201).json({ message: '用戶註冊成功' });
+  } catch (error) {
+    logger.error('註冊處理錯誤', { error: error.message, stack: error.stack });
+    res.status(500).json({ error: '伺服器內部錯誤' });
+  }
 });
 
 /**
@@ -318,7 +348,7 @@ app.post('/register', async (req, res) => {
  *       429:
  *         description: 請求過於頻繁（速率限制）
  */
-app.post('/login', async (req, res) => {
+app.post('/api/login', async (req, res) => {
   const clientIP = req.ip || req.connection.remoteAddress || req.socket.remoteAddress || 'unknown';
 
   try {
@@ -332,8 +362,8 @@ app.post('/login', async (req, res) => {
       return res.status(400).json({ error: error.details[0].message });
     }
 
-    const { username, password } = req.body;
-    const user = users.find(u => u.username === username);
+    const { username, password, otpToken } = req.body;
+    const user = await User.findOne({ where: { username } });
 
     if (!user || !(await bcrypt.compare(password, user.password))) {
       logger.securityEvent('FAILED_LOGIN_ATTEMPT', {
@@ -344,7 +374,35 @@ app.post('/login', async (req, res) => {
       return res.status(401).json({ error: '無效憑證' });
     }
 
-    const token = jwt.sign({ username }, process.env.JWT_SECRET || 'secret', { expiresIn: '1h' });
+    // 檢查是否啟用 2FA
+    if (user.is2FAEnabled) {
+      if (!otpToken) {
+        return res.json({ requires2FA: true });
+      }
+
+      // 驗證 2FA 代碼
+      const verified = speakeasy.totp.verify({
+        secret: user.otpSecret,
+        encoding: 'base32',
+        token: otpToken,
+        window: 2
+      });
+
+      if (!verified) {
+        logger.securityEvent('FAILED_2FA_ATTEMPT', {
+          ip: clientIP,
+          username: username,
+          userAgent: req.get('User-Agent')
+        });
+        return res.status(401).json({ error: '無效的 2FA 代碼' });
+      }
+    }
+
+    const token = jwt.sign({ 
+      username: user.username,
+      role: user.role,
+      id: user.id
+    }, process.env.JWT_SECRET || 'secret', { expiresIn: '1h' });
 
     logger.securityEvent('SUCCESSFUL_LOGIN', {
       ip: clientIP,
@@ -363,6 +421,123 @@ app.post('/login', async (req, res) => {
   }
 });
 
+// 2FA 相關路由
+
+app.post('/api/enable-2fa', async (req, res) => {
+  try {
+    const { username } = req.body;
+
+    // 查找用戶 (使用數據庫)
+    const user = await User.findOne({ where: { username } });
+    if (!user) {
+      return res.status(404).json({ error: '用戶不存在' });
+    }
+
+    // 檢查是否已經啟用 2FA
+    if (user.is2FAEnabled) {
+      return res.status(400).json({ error: '2FA 已經啟用' });
+    }
+
+    // 生成 TOTP 密鑰
+    const secret = speakeasy.generateSecret({
+      name: `資訊安全專案 (${username})`,
+      issuer: '資訊安全專案'
+    });
+
+    // 生成 QR 碼
+    const qrCodeUrl = await qrcode.toDataURL(secret.otpauth_url);
+
+    // 更新用戶數據庫記錄
+    await user.update({
+      otpSecret: secret.base32,
+      is2FAEnabled: false // 還沒有完成設置
+    });
+
+    logger.securityEvent('2FA_SECRET_GENERATED', {
+      username: username,
+      ip: req.ip || req.connection.remoteAddress
+    });
+
+    res.json({
+      qrCode: qrCodeUrl,
+      secret: secret.base32 // 提供備用密鑰
+    });
+  } catch (error) {
+    logger.error('啟用 2FA 錯誤', { error: error.message, stack: error.stack });
+    res.status(500).json({ error: '伺服器內部錯誤' });
+  }
+});
+
+app.post('/api/verify-2fa-setup', async (req, res) => {
+  try {
+    const { username, token } = req.body;
+
+    const user = await User.findOne({ where: { username } });
+    if (!user) {
+      return res.status(404).json({ error: '用戶不存在' });
+    }
+
+    if (!user.otpSecret) {
+      return res.status(400).json({ error: '尚未生成 2FA 密鑰' });
+    }
+
+    if (user.is2FAEnabled) {
+      return res.status(400).json({ error: '2FA 已經啟用' });
+    }
+
+    // 驗證 TOTP 代碼
+    const verified = speakeasy.totp.verify({
+      secret: user.otpSecret,
+      encoding: 'base32',
+      token: token,
+      window: 2 // 允許 2 個時間窗口的容錯
+    });
+
+    if (!verified) {
+      return res.status(400).json({ error: '無效的 2FA 代碼' });
+    }
+
+    // 完成 2FA 設置
+    await user.update({ is2FAEnabled: true });
+
+    logger.securityEvent('2FA_SETUP_COMPLETED', {
+      username: username,
+      ip: req.ip || req.connection.remoteAddress
+    });
+
+    res.json({ message: '2FA 設置完成' });
+  } catch (error) {
+    logger.error('驗證 2FA 設置錯誤', { error: error.message, stack: error.stack });
+    res.status(500).json({ error: '伺服器內部錯誤' });
+  }
+});
+
+app.post('/api/disable-2fa', async (req, res) => {
+  try {
+    const { username } = req.body;
+
+    const user = await User.findOne({ where: { username } });
+    if (!user) {
+      return res.status(404).json({ error: '用戶不存在' });
+    }
+
+    await user.update({
+      otpSecret: null,
+      is2FAEnabled: false
+    });
+
+    logger.securityEvent('2FA_DISABLED', {
+      username: username,
+      ip: req.ip || req.connection.remoteAddress
+    });
+
+    res.json({ message: '2FA 已停用' });
+  } catch (error) {
+    logger.error('停用 2FA 錯誤', { error: error.message, stack: error.stack });
+    res.status(500).json({ error: '伺服器內部錯誤' });
+  }
+});
+
 // 受保護路由 (後端安全設計 5: 授權)
 const authenticateToken = (req, res, next) => {
   const token = req.header('Authorization')?.split(' ')[1];
@@ -373,6 +548,20 @@ const authenticateToken = (req, res, next) => {
     req.user = user;
     next();
   });
+};
+
+const authorizeRole = (requiredRole) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ error: '未認證' });
+    }
+
+    if (req.user.role !== requiredRole && req.user.role !== 'admin') {
+      return res.status(403).json({ error: '權限不足' });
+    }
+
+    next();
+  };
 };
 
 /**
@@ -400,8 +589,220 @@ const authenticateToken = (req, res, next) => {
  *       403:
  *         description: 無效或過期的令牌
  */
-app.get('/protected', authenticateToken, (req, res) => {
-  res.json({ message: `歡迎, ${req.user.username}` });
+app.get('/api/protected', authenticateToken, (req, res) => {
+  const roleText = req.user.role === 'admin' ? '管理員' : '一般使用者';
+  res.json({ 
+    message: `歡迎, ${req.user.username}`,
+    role: req.user.role,
+    roleText: roleText,
+    permissions: req.user.role === 'admin' ? 
+      ['基本功能', '用戶管理', '系統統計', '管理員儀表板'] : 
+      ['基本功能'],
+    timestamp: new Date().toISOString()
+  });
+});
+
+/**
+ * @swagger
+ * /admin/users:
+ *   get:
+ *     summary: 獲取所有用戶列表 (管理員專用)
+ *     description: 只有管理員才能訪問的用戶管理功能
+ *     tags: [管理員功能]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 成功獲取用戶列表
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 users:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                       username:
+ *                         type: string
+ *                       role:
+ *                         type: string
+ *                         enum: [admin, user]
+ *                       is2FAEnabled:
+ *                         type: boolean
+ *       403:
+ *         description: 權限不足
+ */
+app.get('/api/admin/users', authenticateToken, authorizeRole('admin'), async (req, res) => {
+  try {
+    const users = await User.findAll({
+      attributes: ['id', 'username', 'role', 'is2FAEnabled'],
+      order: [['createdAt', 'DESC']]
+    });
+    res.json({ users });
+  } catch (error) {
+    logger.error('獲取用戶列表錯誤', { error: error.message });
+    res.status(500).json({ error: '伺服器內部錯誤' });
+  }
+});
+
+/**
+ * @swagger
+ * /admin/users/{id}/role:
+ *   put:
+ *     summary: 修改用戶角色 (管理員專用)
+ *     description: 管理員可以修改其他用戶的角色
+ *     tags: [管理員功能]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: 用戶 ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               role:
+ *                 type: string
+ *                 enum: [admin, user]
+ *     responses:
+ *       200:
+ *         description: 角色修改成功
+ *       403:
+ *         description: 權限不足
+ *       404:
+ *         description: 用戶不存在
+ */
+app.put('/api/admin/users/:id/role', authenticateToken, authorizeRole('admin'), async (req, res) => {
+  const { id } = req.params;
+  const { role } = req.body;
+
+  if (!['admin', 'user'].includes(role)) {
+    return res.status(400).json({ error: '無效的角色' });
+  }
+
+  try {
+    const user = await User.findByPk(id);
+    if (!user) {
+      return res.status(404).json({ error: '用戶不存在' });
+    }
+
+    // 防止管理員移除自己的管理員權限
+    if (user.id === req.user.id && role === 'user') {
+      return res.status(400).json({ error: '不能移除自己的管理員權限' });
+    }
+
+    await user.update({ role });
+    logger.info('用戶角色已修改', { admin: req.user.username, targetUser: user.username, newRole: role });
+    res.json({ message: '用戶角色修改成功' });
+  } catch (error) {
+    logger.error('修改用戶角色錯誤', { error: error.message });
+    res.status(500).json({ error: '伺服器內部錯誤' });
+  }
+});
+
+/**
+ * @swagger
+ * /admin/dashboard:
+ *   get:
+ *     summary: 管理員儀表板 (管理員專用)
+ *     description: 管理員專用的系統統計資訊
+ *     tags: [管理員功能]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 成功獲取儀表板數據
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 totalUsers:
+ *                   type: integer
+ *                 adminUsers:
+ *                   type: integer
+ *                 regularUsers:
+ *                   type: integer
+ *                 usersWith2FA:
+ *                   type: integer
+ */
+app.get('/api/admin/dashboard', authenticateToken, authorizeRole('admin'), async (req, res) => {
+  try {
+    const totalUsers = await User.count();
+    const adminUsers = await User.count({ where: { role: 'admin' } });
+    const regularUsers = await User.count({ where: { role: 'user' } });
+    const usersWith2FA = await User.count({ where: { is2FAEnabled: true } });
+
+    res.json({
+      totalUsers,
+      adminUsers,
+      regularUsers,
+      usersWith2FA
+    });
+  } catch (error) {
+    logger.error('獲取儀表板數據錯誤', { error: error.message });
+    res.status(500).json({ error: '伺服器內部錯誤' });
+  }
+});
+
+/**
+ * @swagger
+ * /admin/setup-first-admin:
+ *   post:
+ *     summary: 設置第一個管理員 (一次性使用)
+ *     description: 將指定用戶設為管理員，僅在系統首次設置時使用
+ *     tags: [管理員功能]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               username:
+ *                 type: string
+ *                 description: 要設為管理員的用戶名
+ *     responses:
+ *       200:
+ *         description: 管理員設置成功
+ *       400:
+ *         description: 用戶不存在或已是管理員
+ */
+app.post('/api/admin/setup-first-admin', async (req, res) => {
+  const { username } = req.body;
+
+  if (!username) {
+    return res.status(400).json({ error: '請提供用戶名' });
+  }
+
+  try {
+    const user = await User.findOne({ where: { username } });
+    if (!user) {
+      return res.status(404).json({ error: '用戶不存在' });
+    }
+
+    if (user.role === 'admin') {
+      return res.status(400).json({ error: '用戶已是管理員' });
+    }
+
+    await user.update({ role: 'admin' });
+    logger.info('第一個管理員已設置', { username: user.username });
+    res.json({ message: '管理員設置成功' });
+  } catch (error) {
+    logger.error('設置管理員錯誤', { error: error.message });
+    res.status(500).json({ error: '伺服器內部錯誤' });
+  }
 });
 
 /**

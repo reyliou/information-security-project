@@ -16,6 +16,14 @@ const User = sequelize.define('User', {
     type: DataTypes.STRING,
     allowNull: false,
   },
+  role: {
+    type: DataTypes.STRING,
+    defaultValue: 'user',
+    allowNull: false,
+    validate: {
+      isIn: [['admin', 'user']]
+    }
+  },
   otpSecret: {
     type: DataTypes.STRING,
     allowNull: true, // 可選，啟用 2FA 時設置
