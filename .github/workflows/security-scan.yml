@@ -61,4 +61,4 @@ jobs:
         rules_file_name: '.zap/rules.tsv'
         cmd_options: '-a'
         allow_issue_writing: false
-        artifact_name: 'zap-scan-report'
+        artifact_name: 'zap_scan_report'
