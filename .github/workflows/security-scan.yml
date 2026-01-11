@@ -61,12 +61,4 @@ jobs:
         rules_file_name: '.zap/rules.tsv'
         cmd_options: '-a'
         allow_issue_writing: false
-
-    - name: Upload ZAP scan results as artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: zap-scan-report
-        path: |
-          report_json.json
-          report_md.md
-          report_html.html
+        artifact_name: 'zap-scan-report'
