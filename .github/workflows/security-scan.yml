@@ -37,3 +37,28 @@ jobs:
         project: '資訊安全專案'
         path: '.'
         format: 'ALL'
+
+  # 動態應用安全測試 (DAST) 使用 OWASP ZAP
+  dast-scan:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build and start application with Docker Compose
+      run: |
+        docker-compose up -d --build
+        sleep 30  # 等待應用完全啟動
+
+    - name: Run OWASP ZAP Full Scan
+      uses: zaproxy/action-full-scan@v0.10.0
+      with:
+        target: 'http://localhost:3002'
+        rules_file_name: '.zap/rules.tsv'
+        cmd_options: '-a'
+
+    - name: Upload ZAP scan results
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: 'results.sarif'
+      if: always()
