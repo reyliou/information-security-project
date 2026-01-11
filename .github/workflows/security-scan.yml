@@ -49,15 +49,29 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Build and start application with Docker Compose
-      run: |
-        docker compose up -d --build
-        sleep 30  # 等待應用完全啟動
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
 
-    - name: Wait for application to be ready
+    - name: Install backend dependencies
+      working-directory: ./backend
+      run: npm install
+
+    - name: Start backend server in background
+      working-directory: ./backend
       run: |
-        timeout 60 bash -c 'until curl -f http://localhost:3002 > /dev/null 2>&1; do sleep 5; done'
-        echo "Application is ready"
+        npm start > server.log 2>&1 &
+
+    - name: Wait for backend application to be ready
+      run: |
+        echo "Waiting for server to start..."
+        timeout 120 bash -c 'until curl -s http://localhost:3002 > /dev/null; do sleep 5; done'
+        echo "Server is up and running!"
+
+    - name: Show server logs if failed
+      if: failure()
+      run: cat backend/server.log
 
     - name: Run OWASP ZAP Full Scan
       uses: zaproxy/action-full-scan@v0.13.0
