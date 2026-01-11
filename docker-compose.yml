@@ -9,8 +9,6 @@ services:
       - JWT_SECRET=your_docker_secret_key
       - PORT=3001
       - HTTPS_PORT=3443
-    volumes:
-      - ./backend/database.sqlite:/app/database.sqlite
     networks:
       - app-network
 
