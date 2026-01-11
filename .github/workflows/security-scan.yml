@@ -59,7 +59,7 @@ jobs:
       with:
         target: 'http://localhost:3002'
         rules_file_name: '.zap/rules.tsv'
-        cmd_options: '-a'
+        cmd_options: '-a -S results.sarif'
 
     - name: Upload ZAP scan results
       uses: github/codeql-action/upload-sarif@v4
