@@ -61,17 +61,23 @@ jobs:
     - name: Start backend server in background
       working-directory: ./backend
       run: |
-        npm start > server.log 2>&1 &
+        # Set PORT to 3002 and start server in background
+        export PORT=3002
+        nohup npm start > server.log 2>&1 &
+        echo "Server launch command executed, pid: $!"
 
     - name: Wait for backend application to be ready
       run: |
-        echo "Waiting for server to start..."
-        timeout 120 bash -c 'until curl -s http://localhost:3002 > /dev/null; do sleep 5; done'
+        echo "Waiting for server to start on port 3002..."
+        timeout 120 bash -c 'until curl -s http://localhost:3002 > /dev/null; do sleep 5; echo "Retrying..."; done'
         echo "Server is up and running!"
 
-    - name: Show server logs if failed
-      if: failure()
-      run: cat backend/server.log
+    - name: Print server logs on failure
+      if: failure() || cancelled()
+      run: |
+        echo "=== SERVER LOGS BEGIN ==="
+        cat backend/server.log
+        echo "=== SERVER LOGS END ==="
 
     - name: Run OWASP ZAP Full Scan
       uses: zaproxy/action-full-scan@v0.13.0
